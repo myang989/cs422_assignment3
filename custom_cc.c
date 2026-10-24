@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * myc3: [M]y [C]ustom [C]ongestion [C]ontrol Algorithm
  * (CS 422 Assignment 3, Option 1).
@@ -39,3 +40,63 @@ struct myc3
     u32 round_end_seq;    /* the round ends when this sequence number is ACKed */
     u32 round_min_rtt_us; /* running min rtt in the current round */
 };
+
+/* Integer cube root - largest k with k^3 <= x (binary search; runs once per epoch). */
+static u32 myc3_cbrt(u64 x)
+{
+    u32 lo = 0, hi = 2097151; /* 2097151^3 < 2^64 */
+
+    while (lo < hi)
+    {
+        u32 mid = lo + (hi - lo + 1) / 2;
+
+        if ((u64)mid * mid * mid <= x)
+            lo = mid;
+        else
+            hi = mid - 1;
+    }
+    return lo;
+}
+
+/* Begin measuring a new round. A round is the time it takes to send a full cwnd.
+The round ends when snd_nxt is ACKed (last packet of the window is ACKED); reset the round's min RTT. */
+static void myc3_start_round(struct sock *sk)
+{
+    // get pointers to tcp state and our cc algo
+    struct tcp_sock *tp = tcp_sk(sk);
+    struct myc3 *ca = inet_csk_ca(sk);
+
+    // saves next sequence number
+    ca->round_end_seq = tp->snd_nxt;
+    ca->round_min_rtt_us = ~0U;
+}
+
+// This tells the os which of the above functions to call for each event
+static struct tcp_congestion_ops tcp_myc3 __read_mostly = {
+    .init = myc3_init,
+    .ssthresh = myc3_ssthresh,
+    .cong_avoid = myc3_cong_avoid,
+    .pkts_acked = myc3_pkts_acked,
+    .undo_cwnd = tcp_reno_undo_cwnd,
+    .owner = THIS_MODULE,
+    .name = "myc3",
+};
+
+static int __init myc3_register(void)
+{
+    BUILD_BUG_ON(sizeof(struct myc3) > ICSK_CA_PRIV_SIZE);
+    return tcp_register_congestion_control(&tcp_myc3);
+}
+
+static void __exit myc3_unregister(void)
+{
+    tcp_unregister_congestion_control(&tcp_myc3);
+}
+
+// myc3_registers runs at insmod, adds myc3 to kernel list of cc algos
+module_init(myc3_register);
+// remove myc3 from list
+module_exit(myc3_unregister);
+
+MODULE_LICENSE("GPL");
+MODULE_DESCRIPTION("myc3: CUBIC-style growth with a proactive RTT guard and loss fallback");
