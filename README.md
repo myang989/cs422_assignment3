@@ -1,42 +1,8 @@
 # myc3 congestion control (Assignment 3, Option 1)
 
-Linux kernel module `tcp_myc3.ko`, algorithm name `myc3`. It implements the
-Assignment 2 Q3(b) design: CUBIC-style time-based growth, a proactive RTT guard against
+Linux kernel module `myc3.ko`, algorithm name `myc3`. It implements the cc algorithm I specifed in 
+Assignment 2 Q3(b), a CUBIC-style time-based growth, with a proactive RTT guard against
 bufferbloat (outer layer), and a multiplicative cut on loss (inner layer).
-
-## Pseudocode as implemented
-
-```
-constants: BETA = 0.7, GUARD_CUT = 0.9, RTT_FACTOR = 1.5, C = 0.4
-state:     cwnd = 10, ssthresh = infinity, W_max = 10, epoch = none
-
-on every ACK with an RTT sample r:
-    round_min_rtt = min(round_min_rtt, r)
-
-once per RTT (when the ACK covers the data outstanding at the round start):
-    if round_min_rtt > RTT_FACTOR * min_rtt:        # outer layer: bufferbloat guard
-        cwnd = max(GUARD_CUT * cwnd, 2)
-        ssthresh = cwnd                             # leaves slow start if still in it
-        epoch = none                                # restart the cubic curve
-    round_min_rtt = infinity
-
-on every ACK:
-    if cwnd < ssthresh:                             # slow start
-        cwnd += 1 per ACKed segment                 # doubles every RTT
-    else:
-        if epoch == none:                           # start a growth epoch
-            epoch_start = now
-            if W_max > cwnd: K = cbrt((W_max - cwnd) / C);  origin = W_max
-            else:            K = 0;                         origin = cwnd
-        target = origin + C * (now - epoch_start - K)^3
-        if target > cwnd: grow toward target over about one RTT (at most +50% per RTT)
-        else:             cwnd += 1 / cwnd per ACK  # linear fallback: +1 per RTT
-
-on loss (3 duplicate ACKs / SACK, or timeout):     # inner layer
-    W_max = cwnd
-    ssthresh = max(BETA * cwnd, 2);  cwnd = ssthresh after recovery (1 after a timeout)
-    epoch = none
-```
 
 ## Changes from the original Q3(b) pseudocode
 
@@ -73,15 +39,14 @@ on loss (3 duplicate ACKs / SACK, or timeout):     # inner layer
 ```sh
 sudo apt install -y build-essential linux-headers-$(uname -r)
 ./load.sh                                   # make, insmod, allow myc3
-sysctl net.ipv4.tcp_available_congestion_control     # should list myc3
+sysctl net.ipv4.tcp_available_congestion_control     # should list myc3 as one of the cc algs
 ```
 
 From the Assignment 2 folder:
 
 ```sh
-python3 experiment.py --dest-file results/<a2_run_id>/chosen_servers.csv \
-    -t 10 -i 0.2 -r 3 --algorithms myc3,cubic,reno,bbr -o results_a3
-```
+python3 experiment.py -n 5 -t 10 -i 0.2 -r 3 --seed 42 \
+    --algorithms myc3,cubic,reno,bbr -o results_a3```
 
-Check that `cc_used` in `tests.csv` reads `myc3`. Unload with `sudo rmmod tcp_myc3`.
+Check that `cc_used` in `tests.csv` reads `myc3`. Unload with `sudo rmmod myc3`.
 If `insmod` says "Key was rejected by service", Secure Boot is blocking unsigned modules.
