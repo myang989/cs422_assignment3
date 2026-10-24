@@ -27,7 +27,9 @@
 #define MYC3_RTT_DEN 2
 #define MYC3_C_NUM 4 /* C = 4/10 = 0.4 segments/s^3 */
 #define MYC3_C_DEN 10
-#define MYC3_MAX_T_MS 100000 /* clamp t - K to 100 s to avoid overflow */
+#define MYC3_MAX_T_MS 100000   /* clamp t - K to 100 s to avoid overflow */
+#define MYC3_GUARD_ROUNDS 2    /* guard needs this many high-RTT rounds in a row ... */
+#define MYC3_GUARD_MIN_CWND 16 /* ... and cwnd of at least this many segments */
 
 /* Each connection will get 104 bytes of private storage for its cc algo.
 On modern linux its 104 bytes while older kernels use 64. */
@@ -39,6 +41,7 @@ struct myc3
     u32 k_ms;             /* time from epoch start to reach origin */
     u32 round_end_seq;    /* the round ends when this sequence number is ACKed */
     u32 round_min_rtt_us; /* running min rtt in the current round */
+    u8 high_rounds;       /* consecutive rounds with RTT above the guard threshold */
 };
 
 /* Integer cube root - largest k with k^3 <= x (binary search; runs once per epoch). */
@@ -144,15 +147,25 @@ static void myc3_end_round(struct sock *sk)
     u32 min_rtt = tcp_min_rtt(tp);
     // if round recorded at least 1 sample AND min_rtt is known AND round_min / min_rtt > 3/2
     // basically check that the rounds rtt doesn't exceed a threshold of 1.5 times baseline rtt
-    if (ca->round_min_rtt_us != ~0U && min_rtt != ~0U &&
-        (u64)ca->round_min_rtt_us * MYC3_RTT_DEN > (u64)min_rtt * MYC3_RTT_NUM)
+    if (ca->round_min_rtt_us != ~0U && min_rtt != ~0U)
     {
-        // lower the cwnd
+        if ((u64)ca->round_min_rtt_us * MYC3_RTT_DEN > (u64)min_rtt * MYC3_RTT_NUM)
+        {
+            if (ca->high_rounds < 255)
+                ca->high_rounds++;
+        }
+        else
+            ca->high_rounds = 0;
+    }
+
+    if (ca->high_rounds >= MYC3_GUARD_ROUNDS && tcp_snd_cwnd(tp) >= MYC3_GUARD_MIN_CWND)
+    {
         u32 cwnd = max_t(u32, (tcp_snd_cwnd(tp) * MYC3_GUARD_CUT) >> 10, 2);
 
         tcp_snd_cwnd_set(tp, cwnd);
         tp->snd_ssthresh = cwnd; /* stay out of (or leave) slow start */
         ca->epoch_start_us = 0;  /* restart the cubic curve from here */
+        ca->high_rounds = 0;     /* the next cut needs 2 more high rounds */
     }
     myc3_start_round(sk);
 }
