@@ -34,7 +34,7 @@ bufferbloat (outer layer), and a multiplicative cut on loss (inner layer).
 | `ssthresh` | Fast retransmit and timeout | Saves W_max, returns 0.7 × cwnd |
 | `undo_cwnd` | Loss turned out to be spurious | Kernel's `tcp_reno_undo_cwnd` |
 
-## Build, load and run (Ubuntu 24.04, kernel 6.8)
+## Build, load and run (Ubuntu 26.04.1, kernel 7)
 
 ```sh
 sudo apt install -y build-essential linux-headers-$(uname -r)
