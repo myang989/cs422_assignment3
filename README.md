@@ -16,6 +16,10 @@ To run expirments with my myc3, from the Assignment 2 folder:
 
 ```sh
 python3 experiment.py -n 5 -t 10 -i 0.2 -r 3 --seed 42 \
-    --algorithms myc3,cubic,reno,bbr -o results_a3```
+    --algorithms myc3,cubic,reno,bbr -o results_a3
+```
 
 Check that `cc_used` in `tests.csv` reads `myc3`. You unload with `sudo rmmod myc3`.
+
+## AI Usage
+AI tooling like Claude and Google search AI were used to help generate and understand some of the more lower level components of the implmentation. Also I used AI assitance to figure out how to build. However the algorithm pseudocode I proudly designed myself.
